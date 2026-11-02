@@ -1,0 +1,36 @@
+{
+  "name": "dnv-drawing-tool",
+  "version": "0.3.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4177 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4187 --strictPort",
+    "serve:local": "node scripts/serve-local.mjs",
+    "test": "tsx --test tests/*.test.ts",
+    "format": "prettier --write src tests scripts/*.mjs vite.config.ts",
+    "format:check": "prettier --check src tests scripts/*.mjs vite.config.ts",
+    "check": "pnpm format:check && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "fflate": "0.8.2",
+    "lucide-react": "0.468.0",
+    "pdfjs-dist": "5.6.205",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "prettier": "3.6.2",
+    "tsx": "4.20.0",
+    "typescript": "5.9.3",
+    "vite": "7.1.0"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

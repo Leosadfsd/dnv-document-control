@@ -1,0 +1,27 @@
+name: 问题反馈
+description: 使用合成资料描述可复现的问题
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 请勿附真实台账、船检意见、账号、备份或业务截图。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题与预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤及合成示例
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 工具版本、浏览器及系统
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件

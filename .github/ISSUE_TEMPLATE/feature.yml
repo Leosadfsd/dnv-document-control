@@ -1,0 +1,20 @@
+name: 功能需求
+description: 记录工作场景及可验证的验收条件
+labels: [enhancement]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 需要解决的工作场景
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: 数据口径、兼容性及范围限制
