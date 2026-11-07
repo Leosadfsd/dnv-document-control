@@ -191,7 +191,7 @@ export function exportOpenCases(
 ): Uint8Array {
   const sheet: Sheet = {
     name: '未闭环清单',
-    widths: [8, 27, 16, 43, 43, 43, 18, 23],
+    widths: [15, 27, 16, 43, 43, 43, 18, 23],
     rows: [],
     merges: [],
     headerRow: 6,
