@@ -77,7 +77,8 @@ export function wrapExportText(text: string, width: number): string[] {
 }
 function addBody(sheet: Sheet, texts: string[], styles: number[] = [], minimumHeight = 26) {
   const lines = texts.map((text, i) => wrapExportText(text, sheet.widths[i]));
-  const chunkLines = 16;
+  // Use the available row height before continuing: Excel caps one row at 409pt.
+  const chunkLines = Math.floor((409 - 12) / 16);
   const chunks = Math.max(1, ...lines.map((l) => Math.ceil(l.length / chunkLines)));
   for (let index = 0; index < chunks; index++) {
     const parts = lines.map((l) => l.slice(index * chunkLines, (index + 1) * chunkLines));

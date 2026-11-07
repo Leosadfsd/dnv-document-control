@@ -194,6 +194,21 @@ test('summary is a readable xlsx with freeze/filter/print ranges and long conten
     'calculation',
   ]);
 });
+test('long opinions use the available row height before introducing continuation rows', () => {
+  const comments = fixture([
+    {
+      ...row('D999999-1', 1),
+      Title: '',
+      Description: Array(21).fill('A readable line').join('\n'),
+    },
+  ]);
+  const cases = buildOpenCommentCases({ catalog: catalog(), comments });
+  const files = unzipSync(exportOpenCases(cases, exportContext));
+  const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
+  assert.ok(!sheet.includes('（续）'));
+  assert.ok([...sheet.matchAll(/ ht="(\d+)"/g)].some((m) => Number(m[1]) > 300));
+});
+
 test('per-drawing replies retain all messages, preserve blank next-reply position and safe unique filenames', () => {
   const comments = fixture([
     row('D999999-1', 1),
