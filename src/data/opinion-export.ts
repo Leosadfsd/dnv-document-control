@@ -45,7 +45,7 @@ const col = (i: number) => {
 };
 const textCell = (text: unknown, style = 0): Cell => ({ text: String(text ?? ''), style });
 
-// Pre-wrap by display width; split across rows instead of exceeding Excel's 409pt row limit.
+// Pre-wrap by display width to size continuous cells before writing the workbook.
 export function wrapExportText(text: string, width: number): string[] {
   const lines: string[] = [];
   for (const original of text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
@@ -77,16 +77,23 @@ export function wrapExportText(text: string, width: number): string[] {
 }
 function addBody(sheet: Sheet, texts: string[], styles: number[] = [], minimumHeight = 26) {
   const lines = texts.map((text, i) => wrapExportText(text, sheet.widths[i]));
-  // Use the available row height before continuing: Excel caps one row at 409pt.
-  const chunkLines = Math.floor((409 - 12) / 16);
-  const chunks = Math.max(1, ...lines.map((l) => Math.ceil(l.length / chunkLines)));
-  for (let index = 0; index < chunks; index++) {
-    const parts = lines.map((l) => l.slice(index * chunkLines, (index + 1) * chunkLines));
-    if (index > 0) parts[0] = wrapExportText(texts[0] + '\n（续）', sheet.widths[0]);
+  const height = Math.max(minimumHeight, Math.max(...lines.map((p) => p.length)) * 16 + 12);
+  // A tall merged cell keeps the entire opinion together visually and in one value.
+  // Underlying rows stay below Excel's row-height cap; no continuation labels or fragments.
+  const rowCount = Math.max(1, Math.ceil(height / 396));
+  const firstRow = sheet.rows.length + 1;
+  for (let index = 0; index < rowCount; index++) {
     sheet.rows.push({
-      cells: parts.map((part, i) => textCell(part.join('\n'), styles[i] ?? 0)),
-      height: Math.max(minimumHeight, Math.max(...parts.map((p) => p.length)) * 16 + 12),
+      cells: lines.map((part, i) => textCell(index === 0 ? part.join('\n') : '', styles[i] ?? 0)),
+      height: Math.ceil(height / rowCount),
     });
+  }
+  if (rowCount > 1) {
+    texts.forEach((_, i) =>
+      sheet.merges.push(`${col(i)}${firstRow}:${col(i)}${firstRow + rowCount - 1}`),
+    );
+    // Filtering merged groups can hide only part of an opinion. Filter in the app before export.
+    sheet.filter = false;
   }
 }
 function addMerged(sheet: Sheet, text: string, style: number, height: number) {
@@ -125,7 +132,7 @@ function top(sheet: Sheet, title: string, context: OpinionExportContext, detail:
   addMerged(sheet, detail, 4, 32);
   addMerged(
     sheet,
-    '回方取系统当前责任方；活动时间不等于正式回复日期。长正文续行保留，未匹配项需核对。',
+    '回方取系统当前责任方；活动时间不等于正式回复日期。长文完整展示，请在网页筛选后导出；未匹配项需核对。',
     3,
     25,
   );
@@ -202,7 +209,7 @@ export function exportOpenCases(
     sheet,
     'DNV 未闭环意见处理清单',
     context,
-    `本次导出 ${cases.length} 条主意见；续行属于同一意见，不计作新增意见。`,
+    `本次导出 ${cases.length} 条主意见；每条意见的正文在同一连续单元格内完整展示。`,
   );
   sheet.rows.push({
     cells: [
@@ -375,7 +382,7 @@ export function exportDrawingReplyPackage(
   const unlinked = cases.filter((c) => !c.drawings.length);
   if (unlinked.length) files['待匹配图纸的意见.xlsx'] = exportOpenCases(unlinked, context);
   files['导出说明.txt'] = strToU8(
-    `本次选中 ${cases.length} 条未闭环主意见，按实际图纸关联生成回复表。跨图纸的同一意见会在对应各图出现，意见ID保持一致。\n主意见及全部已导入往来保留，待填行不自动生成技术回复。\n来源：${context.sourceFilename}\n资料日期：${context.sourceDate || '未提供'}\n范围：${context.sourceComplete ? '已确认完整' : '未确认完整，历史可能不全'}\n导出：${context.exportedAt}\n无图纸关联的意见：${unlinked.length} 条，另放待匹配清单。\n长正文按续行保留；打印为A3横向、重复表头，纸张可在Excel/WPS中调整。`,
+    `本次选中 ${cases.length} 条未闭环主意见，按实际图纸关联生成回复表。跨图纸的同一意见会在对应各图出现，意见ID保持一致。\n主意见及全部已导入往来保留，待填行不自动生成技术回复。\n来源：${context.sourceFilename}\n资料日期：${context.sourceDate || '未提供'}\n范围：${context.sourceComplete ? '已确认完整' : '未确认完整，历史可能不全'}\n导出：${context.exportedAt}\n无图纸关联的意见：${unlinked.length} 条，另放待匹配清单。\n长正文使用连续大单元格完整保留，不拆续行；打印为A3横向、重复表头，纸张可在Excel/WPS中调整。`,
   );
   return zipSync(files);
 }

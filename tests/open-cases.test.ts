@@ -159,7 +159,7 @@ test('unmatched and unlinked cases survive; blank author, dates and owners do no
   assert.ok(files['待匹配图纸的意见.xlsx']);
   assert.ok(files['导出说明.txt']);
 });
-test('summary is a readable xlsx with freeze/filter/print ranges and long content continued without loss or formulas', () => {
+test('summary keeps long content in a single tall merged cell without loss or continuation fragments', () => {
   const text = 'Long content 中文长段落 =SUM(A1)\n'.repeat(150) + 'KEEP_END';
   const comments = fixture([
     { ...row('D999999-1', 1), Description: text },
@@ -170,8 +170,9 @@ test('summary is a readable xlsx with freeze/filter/print ranges and long conten
     files = unzipSync(bytes);
   const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
   assert.ok(sheet.includes('KEEP_END'));
-  assert.ok(sheet.includes('（续）'));
-  assert.ok(sheet.includes('autoFilter'));
+  assert.ok(!sheet.includes('（续）'));
+  assert.ok(!sheet.includes('autoFilter'));
+  assert.ok(sheet.includes('mergeCell ref="D7:D'));
   assert.ok(sheet.includes('state="frozen"'));
   assert.ok(sheet.includes('orientation="landscape"'));
   assert.ok(!sheet.includes('<f>'));
@@ -187,6 +188,7 @@ test('summary is a readable xlsx with freeze/filter/print ranges and long conten
     .map((r) => r[3] ?? '')
     .join('\n');
   assert.equal((body.match(/Long content/g) ?? []).length, 150);
+  assert.equal(all.slice(6).filter((r) => r[3]?.includes('Long content')).length, 1);
   assert.ok(wrapExportText('中'.repeat(100), 43).length > 1);
   assert.deepEqual(wrapExportText('Please provide supporting calculation', 24), [
     'Please provide',
@@ -194,7 +196,7 @@ test('summary is a readable xlsx with freeze/filter/print ranges and long conten
     'calculation',
   ]);
 });
-test('long opinions use the available row height before introducing continuation rows', () => {
+test('opinions that fit one physical row retain native Excel filtering and adaptive height', () => {
   const comments = fixture([
     {
       ...row('D999999-1', 1),
@@ -206,6 +208,7 @@ test('long opinions use the available row height before introducing continuation
   const files = unzipSync(exportOpenCases(cases, exportContext));
   const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
   assert.ok(!sheet.includes('（续）'));
+  assert.ok(sheet.includes('autoFilter'));
   assert.ok([...sheet.matchAll(/ ht="(\d+)"/g)].some((m) => Number(m[1]) > 300));
 });
 
