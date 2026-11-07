@@ -197,9 +197,11 @@ export function StatisticsPanel({
               <span>
                 图纸闭环率{' '}
                 <b>
-                  {stats.available.documents && stats.available.comments
-                    ? percent(stats.rates.closed)
-                    : '—'}
+                  {!stats.complete.documents || !stats.complete.comments
+                    ? '待确认'
+                    : stats.available.documents && stats.available.comments
+                      ? percent(stats.rates.closed)
+                      : '—'}
                 </b>
                 <small>已闭环 ÷ 已返回</small>
               </span>
@@ -218,7 +220,11 @@ export function StatisticsPanel({
                     onClick={() => chooseMetric(key)}
                   >
                     <span>{metricLabels[key]}</span>
-                    <strong>{show(stats.metrics[key], stats.available.documents)}</strong>
+                    <strong>
+                      {key === 'closed' && (!stats.complete.documents || !stats.complete.comments)
+                        ? '待确认'
+                        : show(stats.metrics[key], stats.available.documents)}
+                    </strong>
                   </button>
                 ))}
               </div>

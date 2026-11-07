@@ -41,9 +41,11 @@ export function statisticsPackage(state: ToolState, statistics: Statistics): Uin
         ? statistics.available.catalog
           ? statistics.metrics.required
           : '未导入台账'
-        : statistics.available.documents
-          ? statistics.metrics[key as keyof typeof statistics.metrics]
-          : '未导入Documents',
+        : key === 'closed' && (!statistics.complete.documents || !statistics.complete.comments)
+          ? '待确认'
+          : statistics.available.documents
+            ? statistics.metrics[key as keyof typeof statistics.metrics]
+            : '未导入Documents',
     ]);
   for (const [key, label] of [
     ['sent', '送审率'],
@@ -53,13 +55,15 @@ export function statisticsPackage(state: ToolState, statistics: Statistics): Uin
   ] as const)
     overview.push([
       label,
-      (key === 'comments'
-        ? statistics.available.comments
-        : key === 'closed'
-          ? statistics.available.documents && statistics.available.comments
-          : statistics.available.documents) && statistics.rates[key] !== null
-        ? `${(statistics.rates[key]! * 100).toFixed(1)}%`
-        : '暂无可计算数据',
+      key === 'closed' && (!statistics.complete.documents || !statistics.complete.comments)
+        ? '待确认'
+        : (key === 'comments'
+              ? statistics.available.comments
+              : key === 'closed'
+                ? statistics.available.documents && statistics.available.comments
+                : statistics.available.documents) && statistics.rates[key] !== null
+          ? `${(statistics.rates[key]! * 100).toFixed(1)}%`
+          : '暂无可计算数据',
     ]);
   for (const [key, label] of [
     ['total', '父意见总数'],

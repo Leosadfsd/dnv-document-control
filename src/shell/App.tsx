@@ -6,7 +6,6 @@ import {
   Settings,
   Download,
   Upload,
-  Search,
   FolderInput,
   Files,
   RotateCcw,
@@ -16,11 +15,13 @@ import {
   AlertTriangle,
   Menu,
   BarChart3,
+  MessageSquare,
+  Wrench,
 } from 'lucide-react';
 import type { SourceMeta, Comparison, ProjectSettings } from '../domain/contracts';
 import type { ToolState, Summary, PreparedImport, InputKind } from '../domain/model';
 import { emptyState } from '../domain/model';
-import { applyImport, undoImport, isFull, buildDrawingSummaries } from '../domain/derive';
+import { applyImport, undoImport, buildDrawingSummaries } from '../domain/derive';
 import { loadState, saveState, exportBackup, validateBackup } from '../data/storage';
 import { runWorker } from '../data/worker-client';
 import { sourceDateFromFilename } from '../domain/parse';
@@ -29,32 +30,36 @@ import { ledgerFields, ledgerValues } from '../domain/ledger-fields';
 import { Detail } from './Detail';
 import { ImportPreview } from './ImportPreview';
 import { StatisticsPanel } from './StatisticsPanel';
+import { OpenCommentsPanel } from './OpenCommentsPanel';
+import { DrawingsPanel } from './DrawingsPanel';
 import {
   Modal,
   FileInput,
-  Pager,
   Badge,
   date,
   localStamp as stamp,
   localDay,
-  roleLabel,
-  stateLabel,
   kindLabel,
 } from './components';
 const Letters = lazy(() => import('./LetterPanel').then((m) => ({ default: m.LetterPanel })));
-type Page = 'statistics' | 'drawings' | 'changes' | 'imports' | 'letters' | 'data';
+type Page =
+  | 'opinions'
+  | 'tools'
+  | 'statistics'
+  | 'drawings'
+  | 'changes'
+  | 'imports'
+  | 'letters'
+  | 'data';
 interface DerivedData {
   summaries: Summary[];
   documentChanges: Comparison | null;
   commentChanges: Comparison | null;
 }
 const nav = [
-  { id: 'statistics', label: '船检统计', icon: BarChart3 },
-  { id: 'drawings', label: '图纸清单', icon: FileText },
-  { id: 'changes', label: '本次变化', icon: History },
-  { id: 'imports', label: '资料导入', icon: FolderInput },
-  { id: 'letters', label: 'Letter处理', icon: Files },
-  { id: 'data', label: '数据管理', icon: Database },
+  { id: 'opinions', label: '未闭环意见', icon: MessageSquare },
+  { id: 'drawings', label: '图纸查询', icon: FileText },
+  { id: 'tools', label: '辅助工具', icon: Wrench },
 ] as const;
 const inputNames: Record<InputKind, string> = {
   catalog: '文控台账',
@@ -83,7 +88,7 @@ async function fingerprint(buffer: ArrayBuffer) {
 export function App() {
   const [state, setState] = useState<ToolState>(emptyState),
     [loaded, setLoaded] = useState(false),
-    [page, setPage] = useState<Page>('statistics');
+    [page, setPage] = useState<Page>('opinions');
   const [derived, setDerived] = useState<DerivedData>({
     summaries: [],
     documentChanges: null,
@@ -99,14 +104,6 @@ export function App() {
     [selected, setSelected] = useState<string | null>(null),
     [exportModal, setExportModal] = useState(false),
     [restore, setRestore] = useState<ToolState | null>(null);
-  const [query, setQuery] = useState(''),
-    [owner, setOwner] = useState(''),
-    [department, setDepartment] = useState(''),
-    [status, setStatus] = useState(''),
-    [approval, setApproval] = useState(''),
-    [role, setRole] = useState(''),
-    [order, setOrder] = useState('sequence'),
-    [listPage, setListPage] = useState(0);
   const abort = useRef<AbortController | null>(null),
     booted = useRef(false);
   useEffect(() => {
@@ -139,7 +136,6 @@ export function App() {
       });
     return () => controller.abort();
   }, [state, loaded]);
-  useEffect(() => setListPage(0), [query, owner, department, status, approval, role, order]);
   const commit = async (next: ToolState, only?: InputKind) => {
     const revision = await saveState({ ...next, revision: state.revision }, only);
     setState({ ...next, revision });
@@ -174,29 +170,6 @@ export function App() {
       abort.current = null;
     }
   }
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const rows = derived.summaries.filter(
-      (s) =>
-        (!q || [s.drawingNo, s.cn, s.en, s.owner].join(' ').toLowerCase().includes(q)) &&
-        (!owner || s.owner === owner) &&
-        (!department || s.department === department) &&
-        (!approval || s.currentDocument?.approvalStatus === approval) &&
-        (!role || Boolean(s.openByRole[role])) &&
-        (!status ||
-          (status === 'open' && s.openCount > 0) ||
-          (status === 'yard' && s.candidateYardDesignCount > 0) ||
-          (status === 'sent' && s.currentDocument?.status === 'Sent') ||
-          (status === 'received' && s.currentDocument?.status === 'Received') ||
-          (status === 'nodate' && s.documentAvailability === 'no-valid-sent') ||
-          (status === 'issue' && Boolean(s.note))),
-    );
-    return order === 'owner'
-      ? [...rows].sort((a, b) => a.owner.localeCompare(b.owner, 'zh-CN') || a.sequence - b.sequence)
-      : rows;
-  }, [derived.summaries, query, owner, department, status, approval, role, order]);
-  const unique = (values: string[]) =>
-    [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
   const detail = useMemo(
     () =>
       derived.summaries.find((s) => s.drawingNo === selected) ??
@@ -209,13 +182,6 @@ export function App() {
         : undefined),
     [selected, derived, state],
   );
-  const totals = {
-    all: derived.summaries.length,
-    sent: derived.summaries.filter((s) => s.currentDocument?.status === 'Sent').length,
-    open: derived.summaries.filter((s) => s.openCount > 0).length,
-    yard: derived.summaries.filter((s) => s.candidateYardDesignCount > 0).length,
-    missing: derived.summaries.filter((s) => s.documentAvailability === 'no-valid-sent').length,
-  };
   const sources = {
     catalog: state.catalog?.catalog.source,
     documents: state.documents.at(-1)?.source,
@@ -242,7 +208,12 @@ export function App() {
           {nav.map((item) => (
             <button
               key={item.id}
-              aria-current={page === item.id ? 'page' : undefined}
+              aria-current={
+                page === item.id ||
+                (item.id === 'tools' && !['opinions', 'drawings'].includes(page))
+                  ? 'page'
+                  : undefined
+              }
               onClick={() => {
                 setPage(item.id);
                 setMenu(false);
@@ -250,13 +221,15 @@ export function App() {
             >
               <item.icon size={19} />
               {item.label}
-              {item.id === 'drawings' && <span>{totals.all || '—'}</span>}
+              {item.id === 'drawings' && (
+                <span>{state.catalog?.catalog.drawings.length ?? '—'}</span>
+              )}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
           <span className="local-dot" />
-          本机数据 <small>0.3.1</small>
+          本机数据 <small>0.4.0</small>
         </div>
       </aside>
       {menu && (
@@ -297,6 +270,11 @@ export function App() {
           </div>
         </header>
         <main>
+          {!['opinions', 'drawings', 'tools'].includes(page) && (
+            <button className="back-to-tools" onClick={() => setPage('tools')}>
+              返回辅助工具
+            </button>
+          )}
           {notice && (
             <div className="flash">
               <ShieldCheck size={17} />
@@ -329,248 +307,67 @@ export function App() {
             </div>
           )}
           {page === 'drawings' && (
+            <DrawingsPanel
+              state={state}
+              openDrawing={setSelected}
+              openImports={() => setPage('imports')}
+            />
+          )}
+          {page === 'opinions' && (
+            <OpenCommentsPanel
+              state={state}
+              openImports={() => setPage('imports')}
+              reportError={setError}
+            />
+          )}
+          {page === 'tools' && (
             <>
               <div className="section-heading">
                 <div>
-                  <h1>图纸清单</h1>
-                  <span className="muted">
-                    {state.catalog
-                      ? `${state.catalog.followed.length} 张关注图纸 · ${state.catalog.catalog.drawings.length} 张基础图纸`
-                      : '暂无基础资料'}
-                  </span>
+                  <h1>辅助工具</h1>
+                  <span className="muted">资料更新、文件处理与数据维护</span>
                 </div>
-                <button onClick={() => setPage('imports')}>
-                  <Upload size={17} />
-                  导入资料
-                </button>
               </div>
-              <div className="metrics">
+              <div className="tool-grid">
                 {[
-                  { label: '全部图纸', value: totals.all, filter: '' },
-                  { label: '已送审待处理', value: totals.sent, filter: 'sent' },
-                  { label: '存在Open意见', value: totals.open, filter: 'open' },
-                  { label: '设计侧Open', value: totals.yard, filter: 'yard' },
-                  { label: '无有效送审日期', value: totals.missing, filter: 'nodate' },
-                ].map((m) => (
-                  <button
-                    className={status === m.filter ? 'active' : ''}
-                    key={m.label}
-                    onClick={() => setStatus(m.filter)}
-                  >
-                    <span>{m.label}</span>
-                    <strong>{state.catalog ? m.value : '—'}</strong>
+                  {
+                    id: 'imports',
+                    label: '资料导入',
+                    icon: FolderInput,
+                    description: '更新Comments、台账及Documents，核对来源范围',
+                  },
+                  {
+                    id: 'letters',
+                    label: 'Letter处理',
+                    icon: Files,
+                    description: '按图号复制整封批复信并命名',
+                  },
+                  {
+                    id: 'statistics',
+                    label: '船检统计',
+                    icon: BarChart3,
+                    description: '查看送审、返回及闭环的辅助统计',
+                  },
+                  {
+                    id: 'changes',
+                    label: '本次变化',
+                    icon: History,
+                    description: '核对新意见、回复及状态变化',
+                  },
+                  {
+                    id: 'data',
+                    label: '备份与数据管理',
+                    icon: Database,
+                    description: '备份恢复、来源记录和撤销',
+                  },
+                ].map((t) => (
+                  <button key={t.id} onClick={() => setPage(t.id as Page)}>
+                    <t.icon size={24} />
+                    <strong>{t.label}</strong>
+                    <span>{t.description}</span>
                   </button>
                 ))}
               </div>
-              <div className="source-dates">
-                <span>Documents资料日期 {date(sources.documents?.dataDate)}</span>
-                <span>Comments资料日期 {date(sources.comments?.dataDate)}</span>
-                {state.comments.at(-1) && !isFull(state.comments.at(-1)!.source) && (
-                  <Badge
-                    text={
-                      state.comments.at(-1)!.source.scope.statuses === 'open-only'
-                        ? '仅Open导出'
-                        : '意见非完整范围'
-                    }
-                    tone="amber"
-                  />
-                )}
-              </div>
-              <div className="filters">
-                <label className="search">
-                  <Search size={18} />
-                  <input
-                    aria-label="搜索图号图名负责人"
-                    placeholder="搜索图号、图名或负责人"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </label>
-                <select
-                  aria-label="负责人筛选"
-                  value={owner}
-                  onChange={(e) => setOwner(e.target.value)}
-                >
-                  <option value="">全部负责人</option>
-                  {unique(derived.summaries.map((s) => s.owner)).map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-                <select
-                  aria-label="专业筛选"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                >
-                  <option value="">全部专业</option>
-                  {unique(derived.summaries.map((s) => s.department)).map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-                <select
-                  aria-label="批复码筛选"
-                  value={approval}
-                  onChange={(e) => setApproval(e.target.value)}
-                >
-                  <option value="">全部批复码</option>
-                  {unique(
-                    derived.summaries.map((s) => s.currentDocument?.approvalStatus ?? ''),
-                  ).map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-                <select
-                  aria-label="当前责任方筛选"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                >
-                  <option value="">全部Open责任方</option>
-                  {unique(derived.summaries.flatMap((s) => Object.keys(s.openByRole))).map((v) => (
-                    <option value={v} key={v}>
-                      {roleLabel(v)}
-                    </option>
-                  ))}
-                </select>
-                <select aria-label="排序" value={order} onChange={(e) => setOrder(e.target.value)}>
-                  <option value="sequence">台账原顺序</option>
-                  <option value="owner">按负责人</option>
-                </select>
-                {(query || owner || department || approval || role || status) && (
-                  <button
-                    className="icon"
-                    title="清除筛选"
-                    aria-label="清除筛选"
-                    onClick={() => {
-                      setQuery('');
-                      setOwner('');
-                      setDepartment('');
-                      setApproval('');
-                      setRole('');
-                      setStatus('');
-                    }}
-                  >
-                    <X size={18} />
-                  </button>
-                )}
-              </div>
-              {!state.catalog ? (
-                <div className="empty-state">
-                  <FileText size={38} />
-                  <h3>暂无图纸资料</h3>
-                  <div className="row-actions">
-                    <button className="primary" onClick={() => setPage('imports')}>
-                      导入文控台账
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="table-scroll">
-                    <table className="drawings-table">
-                      <thead>
-                        <tr>
-                          <th>序号</th>
-                          <th>图号 / 图名</th>
-                          <th>负责人</th>
-                          <th>最新送审</th>
-                          <th>对应结果</th>
-                          <th>意见（所导出）</th>
-                          <th>Open责任方</th>
-                          <th>核对</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filtered.slice(listPage * 50, (listPage + 1) * 50).map((s) => (
-                          <tr key={s.drawingNo}>
-                            <td className="muted">{s.sequence}</td>
-                            <td>
-                              <button
-                                className="drawing-link"
-                                onClick={() => setSelected(s.drawingNo)}
-                              >
-                                <code>{s.drawingNo}</code>
-                                <strong>{s.cn || s.en || '未填写图名'}</strong>
-                              </button>
-                            </td>
-                            <td>{s.owner || '—'}</td>
-                            <td>
-                              <b>{s.currentDocument?.revision || '—'}</b>
-                              <small>{date(s.currentDocument?.sent.iso)}</small>
-                              <span className="cell-note">
-                                {s.currentDocument
-                                  ? stateLabel(s.currentDocument.status)
-                                  : s.documentAvailability === 'no-valid-sent'
-                                    ? '无有效送审日期'
-                                    : s.documentAvailability === 'not-imported'
-                                      ? '资料未导入'
-                                      : '未找到图纸卡'}
-                              </span>
-                            </td>
-                            <td>
-                              <Badge
-                                text={s.currentDocument?.approvalStatus || '—'}
-                                tone={s.currentDocument?.approvalStatus ? 'blue' : 'neutral'}
-                              />
-                              <small>{date(s.currentDocument?.received.iso)}</small>
-                              {s.currentDocument &&
-                                !s.currentDocument.received.iso &&
-                                s.latestResponse && (
-                                  <span className="cell-note">
-                                    历史 {s.latestResponse.revision} /{' '}
-                                    {s.latestResponse.approvalStatus}
-                                  </span>
-                                )}
-                            </td>
-                            <td>
-                              {state.comments.length ? (
-                                <>
-                                  <span className={s.openCount ? 'open-count' : ''}>
-                                    Open {s.openCount}
-                                  </span>
-                                  <small>
-                                    Closed {s.closedCount} / 总数 {s.uniqueParentCount}
-                                  </small>
-                                </>
-                              ) : (
-                                '未导入'
-                              )}
-                            </td>
-                            <td>
-                              <div className="role-cell">
-                                {Object.entries(s.openByRole).map(([r, n]) => (
-                                  <span key={r}>
-                                    {roleLabel(r)} {n}
-                                  </span>
-                                ))}
-                              </div>
-                            </td>
-                            <td>
-                              {s.note ? (
-                                <button
-                                  className="icon warning"
-                                  title={s.note}
-                                  aria-label={`核对 ${s.drawingNo}`}
-                                  onClick={() => setSelected(s.drawingNo)}
-                                >
-                                  <AlertTriangle size={16} />
-                                </button>
-                              ) : (
-                                <span className="muted">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {!filtered.length && <p className="empty">未找到匹配图纸</p>}
-                  </div>
-                  <Pager
-                    total={filtered.length}
-                    page={Math.min(listPage, Math.max(0, Math.ceil(filtered.length / 50) - 1))}
-                    size={50}
-                    setPage={setListPage}
-                  />
-                </>
-              )}
             </>
           )}
           {page === 'statistics' && (
@@ -852,19 +649,23 @@ export function App() {
               <input
                 required
                 name="key"
+                aria-label="项目标识"
                 pattern="[a-z0-9-]+"
                 defaultValue={state.project?.projectKey}
               />
+              <small>本机识别用，例如 kiwi-fhl；使用小写字母、数字或短横线。</small>
             </label>
             <label>
               DNV项目号
               <input
                 required
                 name="id"
+                aria-label="DNV项目号"
                 inputMode="numeric"
                 pattern="[0-9]+"
                 defaultValue={state.project?.projectId}
               />
+              <small>填写系统导出表中的 Project Id，例如 D123456 文件对应 123456。</small>
             </label>
             <div className="modal-actions">
               <button type="submit" className="primary">
