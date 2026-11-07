@@ -25,8 +25,8 @@ import { applyImport, undoImport, buildDrawingSummaries } from '../domain/derive
 import { loadState, saveState, exportBackup, validateBackup } from '../data/storage';
 import { runWorker } from '../data/worker-client';
 import { sourceDateFromFilename } from '../domain/parse';
-import { exportLedger, download } from '../data/ledger-export';
-import { ledgerFields, ledgerValues } from '../domain/ledger-fields';
+import { exportLedgerWithChanges, download } from '../data/ledger-export';
+import { ledgerWriteback, writebackFields } from '../domain/ledger-writeback';
 import { Detail } from './Detail';
 import { ImportPreview } from './ImportPreview';
 import { StatisticsPanel } from './StatisticsPanel';
@@ -182,6 +182,17 @@ export function App() {
         : undefined),
     [selected, derived, state],
   );
+  const writebackSummaries = useMemo(
+    () =>
+      exportModal && state.catalog
+        ? buildDrawingSummaries(
+            { ...state.catalog, followed: state.catalog.catalog.drawings.map((d) => d.drawingNo) },
+            state.documents.at(-1) ?? null,
+            state.comments.at(-1) ?? null,
+          )
+        : [],
+    [state, exportModal],
+  );
   const sources = {
     catalog: state.catalog?.catalog.source,
     documents: state.documents.at(-1)?.source,
@@ -229,7 +240,7 @@ export function App() {
         </nav>
         <div className="sidebar-bottom">
           <span className="local-dot" />
-          本机数据 <small>0.4.0</small>
+          本机数据 <small>0.4.1</small>
         </div>
       </aside>
       {menu && (
@@ -709,28 +720,28 @@ export function App() {
       {exportModal && (
         <Modal title="导出台账预览" close={() => setExportModal(false)} wide>
           <p className="notice">
-            保留原工作表、原单元格及旧船检列，在主表右侧追加新统计列。数值对应当前所导出范围；缺失和未确认范围会写入数据说明。
+            按图号写回原文控台账的船检栏，保留已更新的船东数据、其他工作表和原格式，不追加统计列。缺失资料保留原值，GSI答复时间保留人工记录。另附TXT逐项记录变动。
           </p>
           <div className="source-row">
             <strong>{state.template?.filename}</strong>
-            <span>{derived.summaries.length} 张关注图纸</span>
+            <span>{writebackSummaries.length} 张台账图纸（按原顺序核对）</span>
           </div>
           <div className="table-scroll">
             <table className="export-table">
               <thead>
                 <tr>
                   <th>图号</th>
-                  {ledgerFields.map((f) => (
+                  {writebackFields.map((f) => (
                     <th key={f}>{f}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {derived.summaries.slice(0, 10).map((s) => (
+                {writebackSummaries.slice(0, 10).map((s) => (
                   <tr key={s.drawingNo}>
                     <td>{s.drawingNo}</td>
-                    {ledgerValues(s, state).map((v, i) => (
-                      <td key={i}>{v ?? '—'}</td>
+                    {writebackFields.map((f) => (
+                      <td key={f}>{ledgerWriteback(s, state).values[f] ?? '保留原值'}</td>
                     ))}
                   </tr>
                 ))}
@@ -743,13 +754,21 @@ export function App() {
               className="primary"
               onClick={() => {
                 try {
+                  const result = exportLedgerWithChanges(state);
                   download(
-                    exportLedger(state, derived.summaries),
+                    result.bytes,
                     `${state.template!.filename.replace(/\.xlsx$/i, '')}_DNV更新.xlsx`,
                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                   );
+                  download(
+                    '\ufeff' + result.changes,
+                    `${state.template!.filename.replace(/\.xlsx$/i, '')}_DNV变动记录.txt`,
+                    'text/plain;charset=utf-8',
+                  );
                   setExportModal(false);
-                  setNotice('更新版台账已导出');
+                  setNotice(
+                    `台账船检栏已回填，修改${result.changedCells}个单元格，已导出Excel和变动TXT`,
+                  );
                 } catch (e) {
                   setError(String(e));
                 }
